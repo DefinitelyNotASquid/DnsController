@@ -2,10 +2,13 @@
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Application;
-import javafx.event.EventHandler;
+import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
+import javafx.concurrent.ScheduledService;
+import javafx.concurrent.Task;
 import javafx.scene.Scene;
 
-import java.awt.event.ActionEvent;
 import java.io.*;
 import java.net.URL;
 
@@ -45,10 +48,15 @@ public class Main extends Application {
     public  TextField name = new TextField();
     public  TextField ipAddress = new TextField();
     public  TextField update_Frequency = new TextField();
+    public boolean async;
+    int i;
+    double k;
 
 
     public void start(Stage primaryStage) throws Exception {
         Stage window = primaryStage;
+        async = true;
+        i = 0;
 
         loadSettings();
 
@@ -156,6 +164,17 @@ public class Main extends Application {
 
         update_Frequency.setPromptText("Frequency in Min");
 
+
+        update_Frequency.textProperty().addListener(new ChangeListener<String>() {
+            @Override
+            public void changed(ObservableValue<? extends String> observable, String oldValue, String newValue) {
+                if (!newValue.matches("\\d{0,9}")) {
+                    update_Frequency.setText(oldValue);
+                }
+            }
+        });
+
+
         dns_schedule_grid.getColumnConstraints().add(DNS_Credentials_CC);
 
         dns_schedule_grid.add(update_Frequency_Label, 0, 0);
@@ -200,6 +219,31 @@ public class Main extends Application {
         });
 
 
+
+        update_Frequency.setOnKeyTyped(event -> {
+
+            async = false;
+            System.out.println("The Frequencey feild has been updated");
+
+            Timeline timeline = new Timeline(new KeyFrame(
+                    Duration.minutes(k),
+                    ae -> {
+                        async = true;
+                        double m = Integer.parseInt(update_Frequency.getText());
+                        k = m;
+                        RecordUpdateScheduledService(m);
+
+                    }));
+
+                if( i == 0) {
+                    i ++;
+
+                    timeline.play();
+                }
+
+        });
+
+
         Cancel.setOnAction(e -> {
 
             saveSettings();
@@ -207,6 +251,10 @@ public class Main extends Application {
 
 
         });
+        double j = Integer.parseInt(update_Frequency.getText());
+        k = j;
+        RecordUpdateScheduledService(j);
+
 
 
         MainBorderPane.add(toolBar, 0, 4);
@@ -219,6 +267,12 @@ public class Main extends Application {
         window.setAlwaysOnTop(true);
         window.setScene(MainScene);
         window.show();
+
+        window.setOnCloseRequest(e -> {
+            saveSettings();
+            e.consume();
+            ConfirmBox.handleClose(window, "Exit", "Sure you want to exit?");
+        });
 
 
     }
@@ -259,7 +313,6 @@ public class Main extends Application {
         Response response = client.newCall(request).execute();
 
         System.out.println(response);
-
     }
     public void saveSettings(){
 
@@ -297,6 +350,37 @@ public class Main extends Application {
         };
 
 
+    }
+    private void RecordUpdateScheduledService(double j) {
+        ScheduledService<Boolean> svc = new ScheduledService<Boolean>() {
+
+            protected Task<Boolean> createTask() {
+                if(!async){
+                    System.out.println("Does code get here");
+                    cancel();
+
+                }
+                return new Task<Boolean>() {
+
+                    protected Boolean call() {
+                        Platform.runLater(() -> {
+                            i = 0;
+                            System.out.println("The Value of async is: " + async);
+                            System.out.println("Trying to update record on regular Scheduled Service");
+                            System.out.println("Time Cycle Set to: " + j);
+                            try {
+                                UpdateDnsRecord(recordID.getText(), domain.getText(), account_id.getText(), password_API.getText(), ipAddress.getText());
+                            } catch (IOException e1) {
+                                e1.printStackTrace();
+                            }
+                        });
+                        return true;
+                    }
+                };
+            }
+        };
+        svc.setPeriod(Duration.minutes(j));
+        svc.start();
     }
 
 
